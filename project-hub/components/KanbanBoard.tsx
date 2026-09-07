@@ -1,105 +1,85 @@
 'use client';
 
 import React, { useState } from 'react';
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent,
-} from '@dnd-kit/core';
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-import TaskCard from './TaskCard';
+import { DndContext, closestCorners, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import Column from './Column';
 
-interface ITask {
+interface Task {
   _id: string;
   title: string;
-  description: string;
   status: string;
-  priority: 'low' | 'medium' | 'high';
-  assignees: Array<{ name: string; email: string }>;
+  priority: string;
+  assignees: string[];
   dueDate?: string;
-  labels: string[];
 }
 
 interface KanbanBoardProps {
-  tasks: ITask[];
-  columns: string[];
-  onTaskMove: (taskId: string, newStatus: string) => void;
-  onTaskClick: (task: ITask) => void;
+  tasks: Task[];
+  onTaskDrop?: (taskId: string, newStatus: string) => void;
 }
 
-export default function KanbanBoard({
-  tasks,
-  columns,
-  onTaskMove,
-  onTaskClick,
-}: KanbanBoardProps) {
+export default function KanbanBoard({ tasks, onTaskDrop }: KanbanBoardProps) {
+  const [taskList, setTaskList] = useState<Task[]>(tasks);
+
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      distance: 8,
+      activationConstraint: {
+        distance: 8,
+      },
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
 
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handleDragEnd = (event: any) => {
     const { active, over } = event;
+
     if (!over) return;
 
-    const taskId = active.id as string;
-    const newStatus = over.id as string;
+    const activeIndex = taskList.findIndex((task) => task._id === active.id);
+    const overIndex = taskList.findIndex((task) => task._id === over.id);
 
-    onTaskMove(taskId, newStatus);
-  };
+    if (activeIndex !== overIndex) {
+      const newList = arrayMove(taskList, activeIndex, overIndex);
+      setTaskList(newList);
 
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'high':
-        return 'border-red-500 bg-red-50';
-      case 'medium':
-        return 'border-yellow-500 bg-yellow-50';
-      case 'low':
-        return 'border-blue-500 bg-blue-50';
-      default:
-        return 'border-gray-300 bg-white';
+      if (onTaskDrop) {
+        const movedTask = newList[overIndex];
+        onTaskDrop(movedTask._id, movedTask.status);
+      }
     }
   };
 
-  return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 p-6">
-        {columns.map((column) => (
-          <div key={column} className="bg-gray-100 rounded-lg p-4">
-            <h3 className="font-bold text-lg mb-4 text-gray-700">{column}</h3>
+  const columns = ['To Do', 'In Progress', 'Done'];
+  const tasksByStatus: { [key: string]: Task[] } = {};
 
+  columns.forEach((col) => {
+    tasksByStatus[col] = taskList.filter((task) => task.status === col);
+  });
+
+  return (
+    <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {columns.map((column) => (
+          <Column key={column} title={column}>
             <SortableContext
-              items={tasks
-                .filter((t) => t.status === column)
-                .map((t) => t._id)}
+              items={tasksByStatus[column]?.map((t) => t._id) || []}
               strategy={verticalListSortingStrategy}
             >
-              <div className="space-y-3">
-                {tasks
-                  .filter((t) => t.status === column)
-                  .map((task) => (
-                    <TaskCard
-                      key={task._id}
-                      task={task}
-                      onClick={() => onTaskClick(task)}
-                    />
-                  ))}
-              </div>
+              {tasksByStatus[column]?.map((task) => (
+                <div
+                  key={task._id}
+                  className="p-4 bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md cursor-grab active:cursor-grabbing"
+                >
+                  <h4 className="font-semibold text-gray-800">{task.title}</h4>
+                  <p className="text-sm text-gray-600 mt-1">Priority: {task.priority}</p>
+                  {task.dueDate && <p className="text-sm text-gray-600">Due: {task.dueDate}</p>}
+                </div>
+              ))}
             </SortableContext>
-          </div>
+          </Column>
         ))}
       </div>
     </DndContext>
