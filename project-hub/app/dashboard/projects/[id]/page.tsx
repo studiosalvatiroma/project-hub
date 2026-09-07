@@ -1,37 +1,4 @@
-'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter, useParams } from 'next/navigation';
-import TaskCard from '../../../components/TaskCard';
-import TaskDetailsModal from '../../../components/TaskDetailsModal_SIMPLE';
-import { DndContext, closestCorners, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
-import { arrayMove, SortableContext, sortableKeyboardCoordinates } from '@dnd-kit/sortable';
-import Column from '../../../components/Column';
-
-interface ITask {
-  _id: string;
-  title: string;
-  description: string;
-  status: string;
-  priority: string;
-  project: string;
-  assignees: string[];
-  dueDate?: string;
-  startDate?: string;
-  labels: string[];
-  createdAt: string;
-}
-
-interface IProject {
-  _id: string;
-  name: string;
-  description: string;
-  team: string;
-  defaultColumns: string[];
-  createdAt: string;
-}
-
-export default function ProjectPage() {
   const params = useParams();
   const projectId = params.id as string;
   const [project, setProject] = useState<IProject | null>(null);
