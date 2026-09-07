@@ -1,4 +1,37 @@
+'use client';
 
+import { useEffect, useState } from 'react';
+import { useRouter, useParams } from 'next/navigation';
+import TaskCard from '../../../../components/TaskCard';
+import TaskDetailsModal from '../../../../components/TaskDetailsModal_SIMPLE';
+import { DndContext, closestCorners, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates } from '@dnd-kit/sortable';
+import Column from '../../../../components/Column';
+
+interface ITask {
+  _id: string;
+  title: string;
+  description: string;
+  status: string;
+  priority: string;
+  project: string;
+  assignees: string[];
+  dueDate?: string;
+  startDate?: string;
+  labels: string[];
+  createdAt: string;
+}
+
+interface IProject {
+  _id: string;
+  name: string;
+  description: string;
+  team: string;
+  defaultColumns: string[];
+  createdAt: string;
+}
+
+export default function ProjectPage() {
   const params = useParams();
   const projectId = params.id as string;
   const [project, setProject] = useState<IProject | null>(null);
@@ -64,9 +97,8 @@
     fetchTasks();
   }, [projectId, router]);
 
-  const handleDragEnd = async (event: any) => {
+  const handleDragEnd = (event: any) => {
     const { active, over } = event;
-
     if (!over) return;
 
     const oldIndex = tasks.findIndex((task) => task._id === active.id);
@@ -88,6 +120,10 @@
     setShowTaskModal(false);
   };
 
+  const handleCloseModal = () => {
+    setShowTaskModal(false);
+  };
+
   if (loading) return <div className="p-4">Caricamento...</div>;
   if (!project) return <div className="p-4">Progetto non trovato</div>;
 
@@ -103,13 +139,23 @@
       <h1 className="text-3xl font-bold mb-6">{project.name}</h1>
       <p className="text-gray-600 mb-6">{project.description}</p>
 
-      <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCorners}
+        onDragEnd={handleDragEnd}
+      >
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {columns.map((column) => (
             <Column key={column} title={column}>
-              <SortableContext items={tasksByStatus[column]?.map((t) => t._id) || []}>
+              <SortableContext
+                items={tasksByStatus[column]?.map((t) => t._id) || []}
+              >
                 {tasksByStatus[column]?.map((task) => (
-                  <div key={task._id} onClick={() => handleTaskClick(task)} className="cursor-pointer">
+                  <div
+                    key={task._id}
+                    onClick={() => handleTaskClick(task)}
+                    className="cursor-pointer"
+                  >
                     <TaskCard task={task} />
                   </div>
                 ))}
@@ -120,8 +166,13 @@
       </DndContext>
 
       {showTaskModal && selectedTask && (
-        <TaskDetailsModal task={selectedTask} onClose={() => setShowTaskModal(false)} onTaskUpdated={handleTaskUpdated} />
+        <TaskDetailsModal
+          task={selectedTask}
+          onClose={handleCloseModal}
+          onTaskUpdated={handleTaskUpdated}
+        />
       )}
     </div>
   );
 }
+
