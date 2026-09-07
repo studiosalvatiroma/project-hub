@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import TaskCard from '@/components/TaskCard';
-import TaskDetailsModal from '@/components/TaskDetailsModal_SIMPLE';
+import TaskCard from '../../../components/TaskCard';
+import TaskDetailsModal from '../../../components/TaskDetailsModal_SIMPLE';
 import { DndContext, closestCorners, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates } from '@dnd-kit/sortable';
-import Column from '@/components/Column';
+import Column from '../../../components/Column';
 
 interface ITask {
   _id: string;
@@ -43,7 +43,9 @@ export default function ProjectPage() {
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      distance: 8,
+      activationConstraint: {
+        distance: 8,
+      },
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
