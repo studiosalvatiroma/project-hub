@@ -2,327 +2,157 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import KanbanBoard from '@/components/KanbanBoard';
-import GanttChart from '@/components/GanttChart';
-import Dashboard from '@/components/Dashboard';
-import TaskDetailsModal from '@/components/TaskDetailsModal';
+import TaskCard from '@/components/TaskCard';
+import TaskDetailsModal from '@/components/TaskDetailsModal_SIMPLE';
+import { DndContext, closestCorners, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates } from '@dnd-kit/sortable';
+import Column from '@/components/Column';
 
 interface ITask {
   _id: string;
   title: string;
   description: string;
   status: string;
-  priority: 'low' | 'medium' | 'high';
+  priority: string;
+  project: string;
   assignees: string[];
   dueDate?: string;
   startDate?: string;
   labels: string[];
+  createdAt: string;
 }
 
 interface IProject {
   _id: string;
   name: string;
   description: string;
+  team: string;
   defaultColumns: string[];
+  createdAt: string;
 }
 
 export default function ProjectPage() {
   const params = useParams();
-  const router = useRouter();
   const projectId = params.id as string;
-
   const [project, setProject] = useState<IProject | null>(null);
   const [tasks, setTasks] = useState<ITask[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<'kanban' | 'gantt' | 'stats'>('kanban');
-  const [token, setToken] = useState('');
-  const [showAddTaskModal, setShowAddTaskModal] = useState(false);
   const [selectedTask, setSelectedTask] = useState<ITask | null>(null);
-  const [newTask, setNewTask] = useState({
-    title: '',
-    description: '',
-    priority: 'medium' as 'low' | 'medium' | 'high',
-    dueDate: '',
-  });
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showTaskModal, setShowTaskModal] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const router = useRouter();
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      distance: 8,
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   useEffect(() => {
-    const storedToken = localStorage.getItem('token');
-    if (!storedToken) {
+    const token = localStorage.getItem('token');
+    if (!token) {
       router.push('/auth/login');
       return;
     }
-    setToken(storedToken);
-  }, [router]);
 
-  useEffect(() => {
-    if (!token || !projectId) return;
-
-    const fetchData = async () => {
+    const fetchProject = async () => {
       try {
-        setProject({
-          _id: projectId,
-          name: 'Sample Project',
-          description: 'Your project description',
-          defaultColumns: ['To Do', 'In Progress', 'Review', 'Done'],
+        const response = await fetch(`/api/projects/${projectId}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
         });
 
-        const tasksRes = await fetch(`/api/tasks?projectId=${projectId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (tasksRes.ok) {
-          setTasks(await tasksRes.json());
-        }
+        if (!response.ok) throw new Error('Failed to fetch project');
+        const data = await response.json();
+        setProject(data);
       } catch (error) {
-        console.error('Error fetching data:', error);
+        console.error('Error fetching project:', error);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchData();
-  }, [token, projectId]);
+    const fetchTasks = async () => {
+      try {
+        const response = await fetch(`/api/projects/${projectId}/tasks`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
 
-  const handleTaskMove = async (taskId: string, newStatus: string) => {
-    try {
-      const response = await fetch(`/api/tasks/${taskId}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ status: newStatus }),
-      });
-
-      if (response.ok) {
-        setTasks(
-          tasks.map((t) => (t._id === taskId ? { ...t, status: newStatus } : t))
-        );
+        if (!response.ok) throw new Error('Failed to fetch tasks');
+        const data = await response.json();
+        setTasks(data);
+      } catch (error) {
+        console.error('Error fetching tasks:', error);
       }
-    } catch (error) {
-      console.error('Error moving task:', error);
+    };
+
+    fetchProject();
+    fetchTasks();
+  }, [projectId, router]);
+
+  const handleDragEnd = async (event: any) => {
+    const { active, over } = event;
+
+    if (!over) return;
+
+    const oldIndex = tasks.findIndex((task) => task._id === active.id);
+    const newIndex = tasks.findIndex((task) => task._id === over.id);
+
+    if (oldIndex !== newIndex) {
+      const newTasks = arrayMove(tasks, oldIndex, newIndex);
+      setTasks(newTasks);
     }
   };
 
   const handleTaskClick = (task: ITask) => {
     setSelectedTask(task);
+    setShowTaskModal(true);
   };
 
-  const handleUpdateTask = (taskId: string, updates: Partial<ITask>) => {
-    setTasks(
-      tasks.map((t) => (t._id === taskId ? { ...t, ...updates } : t))
-    );
-    if (selectedTask && selectedTask._id === taskId) {
-      setSelectedTask({ ...selectedTask, ...updates });
-    }
+  const handleTaskUpdated = (updatedTask: ITask) => {
+    setTasks(tasks.map((t) => (t._id === updatedTask._id ? updatedTask : t)));
+    setShowTaskModal(false);
   };
 
-  const handleAddTask = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTask.title.trim()) {
-      alert('Titolo task obbligatorio!');
-      return;
-    }
+  if (loading) return <div className="p-4">Caricamento...</div>;
+  if (!project) return <div className="p-4">Progetto non trovato</div>;
 
-    setIsSubmitting(true);
-    try {
-      const response = await fetch('/api/tasks', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          title: newTask.title,
-          description: newTask.description,
-          project: projectId,
-          priority: newTask.priority,
-          dueDate: newTask.dueDate || undefined,
-          assignees: [],
-          labels: [],
-        }),
-      });
+  const columns = project.defaultColumns || ['To Do', 'In Progress', 'Done'];
+  const tasksByStatus: { [key: string]: ITask[] } = {};
 
-      if (response.ok) {
-        const createdTask = await response.json();
-        setTasks([...tasks, createdTask]);
-        setNewTask({ title: '', description: '', priority: 'medium', dueDate: '' });
-        setShowAddTaskModal(false);
-        alert('Task creato con successo!');
-      } else {
-        alert('Errore nella creazione del task');
-      }
-    } catch (error) {
-      console.error('Error creating task:', error);
-      alert('Errore nella creazione del task');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  if (loading) {
-    return <div className="flex items-center justify-center h-screen">Caricamento...</div>;
-  }
-
-  if (!project) {
-    return <div className="flex items-center justify-center h-screen">Project not found</div>;
-  }
+  columns.forEach((col) => {
+    tasksByStatus[col] = tasks.filter((task) => task.status === col);
+  });
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <nav className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-blue-600">{project.name}</h1>
-            <p className="text-gray-600 text-sm">{project.description}</p>
-          </div>
-          <button
-            onClick={() => router.push('/dashboard')}
-            className="text-gray-600 hover:text-gray-900 font-semibold"
-          >
-            ← Indietro
-          </button>
+    <div className="p-6">
+      <h1 className="text-3xl font-bold mb-6">{project.name}</h1>
+      <p className="text-gray-600 mb-6">{project.description}</p>
+
+      <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {columns.map((column) => (
+            <Column key={column} title={column}>
+              <SortableContext items={tasksByStatus[column]?.map((t) => t._id) || []}>
+                {tasksByStatus[column]?.map((task) => (
+                  <div key={task._id} onClick={() => handleTaskClick(task)} className="cursor-pointer">
+                    <TaskCard task={task} />
+                  </div>
+                ))}
+              </SortableContext>
+            </Column>
+          ))}
         </div>
-      </nav>
+      </DndContext>
 
-      <div className="max-w-7xl mx-auto px-6 py-6">
-        <div className="flex gap-4 mb-6 justify-between items-center">
-          <div className="flex gap-4">
-            <button
-              onClick={() => setView('kanban')}
-              className={`px-6 py-2 rounded-lg font-semibold transition ${
-                view === 'kanban'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-white text-gray-700 border border-gray-300'
-              }`}
-            >
-              📊 Kanban
-            </button>
-            <button
-              onClick={() => setView('gantt')}
-              className={`px-6 py-2 rounded-lg font-semibold transition ${
-                view === 'gantt'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-white text-gray-700 border border-gray-300'
-              }`}
-            >
-              📅 Timeline
-            </button>
-            <button
-              onClick={() => setView('stats')}
-              className={`px-6 py-2 rounded-lg font-semibold transition ${
-                view === 'stats'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-white text-gray-700 border border-gray-300'
-              }`}
-            >
-              📈 Statistics
-            </button>
-          </div>
-
-          <button
-            onClick={() => setShowAddTaskModal(true)}
-            className="px-6 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition"
-          >
-            + Add Task
-          </button>
-        </div>
-
-        {showAddTaskModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-8 max-w-md w-full">
-              <h2 className="text-2xl font-bold mb-6">Add New Task</h2>
-              <form onSubmit={handleAddTask}>
-                <div className="mb-4">
-                  <label className="block text-gray-700 font-semibold mb-2">Title *</label>
-                  <input
-                    type="text"
-                    value={newTask.title}
-                    onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
-                    placeholder="Task title"
-                    required
-                  />
-                </div>
-
-                <div className="mb-4">
-                  <label className="block text-gray-700 font-semibold mb-2">Description</label>
-                  <textarea
-                    value={newTask.description}
-                    onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
-                    placeholder="Task description"
-                    rows={3}
-                  />
-                </div>
-
-                <div className="mb-4">
-                  <label className="block text-gray-700 font-semibold mb-2">Priority</label>
-                  <select
-                    value={newTask.priority}
-                    onChange={(e) => setNewTask({ ...newTask, priority: e.target.value as 'low' | 'medium' | 'high' })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
-                  >
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                  </select>
-                </div>
-
-                <div className="mb-6">
-                  <label className="block text-gray-700 font-semibold mb-2">Due Date</label>
-                  <input
-                    type="date"
-                    value={newTask.dueDate}
-                    onChange={(e) => setNewTask({ ...newTask, dueDate: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
-                  />
-                </div>
-
-                <div className="flex gap-4">
-                  <button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="flex-1 bg-blue-600 text-white font-semibold py-2 rounded-lg hover:bg-blue-700 transition disabled:bg-gray-400"
-                  >
-                    {isSubmitting ? 'Creating...' : 'Create Task'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowAddTaskModal(false)}
-                    className="flex-1 bg-gray-300 text-gray-700 font-semibold py-2 rounded-lg hover:bg-gray-400 transition"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {view === 'kanban' && (
-          <KanbanBoard
-            tasks={tasks}
-            columns={project.defaultColumns}
-            onTaskMove={handleTaskMove}
-            onTaskClick={handleTaskClick}
-          />
-        )}
-
-        {view === 'gantt' && <GanttChart tasks={tasks} />}
-
-        {view === 'stats' && <Dashboard tasks={tasks} />}
-
-        {selectedTask && (
-          <TaskDetailsModal
-            task={selectedTask}
-            isOpen={!!selectedTask}
-            onClose={() => setSelectedTask(null)}
-            onUpdate={handleUpdateTask}
-            token={token}
-          />
-        )}
-      </div>
+      {showTaskModal && selectedTask && (
+        <TaskDetailsModal task={selectedTask} onClose={() => setShowTaskModal(false)} onTaskUpdated={handleTaskUpdated} />
+      )}
     </div>
   );
 }
